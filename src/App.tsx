@@ -32,6 +32,7 @@ import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { LoginPage } from './components/LoginPage';
+import { GHANA_CITIES } from './lib/cities';
 
 export default function App() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -47,6 +48,8 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [showDetailedForecast, setShowDetailedForecast] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const glassClass = theme === 'dark' ? 'glass-dark' : 'glass-light';
   const textClass = theme === 'dark' ? 'text-white' : 'text-slate-900';
@@ -153,8 +156,11 @@ export default function App() {
     setError(null);
     try {
       const params: any = { units };
-      if (searchCity) params.city = searchCity;
-      else if (lat && lon) {
+      if (searchCity) {
+        // Prioritize Ghana if no country code is provided
+        const cityToSearch = searchCity.includes(',') ? searchCity : `${searchCity},GH`;
+        params.city = cityToSearch;
+      } else if (lat && lon) {
         params.lat = lat;
         params.lon = lon;
       }
@@ -179,10 +185,10 @@ export default function App() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => fetchWeather(undefined, pos.coords.latitude, pos.coords.longitude),
-        () => fetchWeather('London') // Fallback
+        () => fetchWeather('Accra') // Fallback
       );
     } else {
-      fetchWeather('London');
+      fetchWeather('Accra');
     }
   };
 
@@ -320,10 +326,39 @@ export default function App() {
               <input
                 type="text"
                 value={city}
-                onChange={(e) => setCity(e.target.value)}
-                onFocus={() => setShowHistory(true)}
-                onBlur={() => setTimeout(() => setShowHistory(false), 200)}
-                placeholder="Search city (e.g. Tokyo, New York)..."
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCity(value);
+                  if (value.length > 0) {
+                    const filtered = GHANA_CITIES.filter(c => 
+                      c.toLowerCase().includes(value.toLowerCase())
+                    ).sort((a, b) => {
+                      const aStarts = a.toLowerCase().startsWith(value.toLowerCase());
+                      const bStarts = b.toLowerCase().startsWith(value.toLowerCase());
+                      if (aStarts && !bStarts) return -1;
+                      if (!aStarts && bStarts) return 1;
+                      return a.localeCompare(b);
+                    }).slice(0, 6);
+                    setSuggestions(filtered);
+                    setShowSuggestions(true);
+                    setShowHistory(false);
+                  } else {
+                    setSuggestions([]);
+                    setShowSuggestions(false);
+                    setShowHistory(true);
+                  }
+                }}
+                onFocus={() => {
+                  if (city.length > 0) setShowSuggestions(true);
+                  else setShowHistory(true);
+                }}
+                onBlur={() => {
+                  setTimeout(() => {
+                    setShowSuggestions(false);
+                    setShowHistory(false);
+                  }, 200);
+                }}
+                placeholder="Search city in Ghana..."
                 className={`w-full ${theme === 'dark' ? 'glass-dark' : 'glass-light'} py-4 px-14 rounded-3xl ${theme === 'dark' ? 'text-white placeholder-white/50' : 'text-slate-900 placeholder-slate-500'} focus:outline-none focus:ring-2 ring-white/30 transition-all shadow-lg text-lg`}
               />
               <Search className={`absolute left-5 top-1/2 -translate-y-1/2 ${theme === 'dark' ? 'text-white/50' : 'text-slate-500'} w-5 h-5`} />
@@ -331,7 +366,37 @@ export default function App() {
             </motion.form>
 
             <AnimatePresence>
-              {showHistory && history.length > 0 && (
+              {showSuggestions && suggestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className={`absolute top-full left-0 right-0 mt-2 ${theme === 'dark' ? 'glass-dark' : 'glass-light'} rounded-[2rem] overflow-hidden shadow-2xl border border-white/10 z-50`}
+                >
+                  <div className={`p-4 border-b ${theme === 'dark' ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50/50'}`}>
+                    <span className={`text-xs font-bold ${theme === 'dark' ? 'text-white/40' : 'text-slate-500'} uppercase tracking-widest`}>Ghana Cities</span>
+                  </div>
+                  <div className="py-2">
+                    {suggestions.map((item, index) => (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          setCity(item);
+                          fetchWeather(item);
+                          setShowSuggestions(false);
+                        }}
+                        className={`w-full px-6 py-3 text-left ${theme === 'dark' ? 'text-white/80 hover:bg-white/10 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'} flex items-center gap-3 transition-all group`}
+                      >
+                        <MapPin className={`w-4 h-4 ${theme === 'dark' ? 'text-white/20' : 'text-slate-300'} group-hover:text-blue-400 transition-colors`} />
+                        <span className="font-medium">{item}</span>
+                        <span className={`ml-auto text-[10px] font-bold ${theme === 'dark' ? 'text-white/20' : 'text-slate-300'} uppercase tracking-widest`}>GH</span>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {showHistory && history.length > 0 && !showSuggestions && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
