@@ -11,7 +11,9 @@ import {
   Sun, 
   Moon,
   CloudRain,
-  Navigation
+  Navigation,
+  X,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
@@ -96,6 +98,13 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   const addToHistory = (newCity: string) => {
     const formattedCity = newCity.trim().toLowerCase();
@@ -459,32 +468,30 @@ export default function App() {
           </motion.div>
         </header>
 
-        {error && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-red-500/30 border border-red-500/50 text-white p-6 rounded-3xl mb-10 max-w-xl text-center backdrop-blur-xl z-20 shadow-2xl"
-          >
-            <div className="flex flex-col items-center gap-3">
-              <div className="p-2 bg-red-500/20 rounded-full">
-                <RefreshCw className="w-6 h-6 text-red-200" />
+        <AnimatePresence>
+          {error && (
+            <motion.div 
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.9 }}
+              className="fixed bottom-8 right-8 bg-red-500/80 border border-red-500/50 text-white p-5 rounded-2xl max-w-xs backdrop-blur-xl z-[100] shadow-2xl flex items-start gap-4"
+            >
+              <div className="p-2 bg-white/20 rounded-xl shrink-0">
+                <AlertCircle className="w-5 h-5 text-white" />
               </div>
-              <p className="font-semibold text-lg">{error}</p>
-              {error.includes('Secrets panel') && (
-                <div className="mt-4 p-4 bg-white/10 rounded-2xl text-sm text-left">
-                  <p className="font-bold mb-2 uppercase tracking-wider text-red-200">How to fix:</p>
-                  <ol className="list-decimal list-inside space-y-2 text-white/80">
-                    <li>Go to <strong>Settings</strong> (gear icon) in the top right.</li>
-                    <li>Select <strong>Secrets</strong>.</li>
-                    <li>Add a new secret with key: <code className="bg-black/30 px-2 py-0.5 rounded">OPENWEATHER_API_KEY</code></li>
-                    <li>Paste your API key from <a href="https://openweathermap.org/api" target="_blank" rel="noreferrer" className="underline hover:text-white">OpenWeatherMap</a>.</li>
-                    <li>Refresh the app.</li>
-                  </ol>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
+              <div className="flex-1 pr-6">
+                <p className="font-bold text-sm mb-1 uppercase tracking-wider">Error</p>
+                <p className="text-sm text-white/90 leading-relaxed">{error}</p>
+              </div>
+              <button 
+                onClick={() => setError(null)}
+                className="absolute top-3 right-3 p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {!weather && !loading && (
           <motion.div 
@@ -760,8 +767,8 @@ export default function App() {
       </div>
 
       <footer className={`mt-auto py-10 ${theme === 'dark' ? 'text-white/30' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.3em] z-20 flex flex-col items-center gap-2`}>
-        <span>© 2026 GODY SkyPredict • Powered by AI</span>
-        <span className="opacity-50">G-TECH SOLUTIONS</span>
+        <span>© 2026 GODY SkyPredict • Powered by </span>
+        <span className="opacity-50">G-TECHNOLOGIES</span>
       </footer>
 
       {/* Detailed Forecast Modal */}

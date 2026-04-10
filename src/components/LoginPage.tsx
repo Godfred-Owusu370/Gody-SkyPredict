@@ -43,7 +43,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ theme }) => {
     try {
       await signInWithPopup(auth, provider);
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError("Google sign-in is not enabled. Please enable it in the Firebase Console.");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -64,7 +68,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ theme }) => {
         }
       }
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError("Email/Password sign-in is not enabled. Please enable it in the Firebase Console (Authentication > Sign-in method).");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
