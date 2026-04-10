@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: userSettings
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required) - User ID
+    //   - unit: string (required, enum: ['metric', 'imperial']) - Temperature unit
+    //   - savedLocations: list (optional) - List of saved city names
+    //   - updatedAt: timestamp (optional) - Last update time
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUserSettings(data) {
+      return data.keys().hasAll(['uid', 'unit']) &&
+             data.uid == request.auth.uid &&
+             data.unit in ['metric', 'imperial'] &&
+             (!('savedLocations' in data) || data.savedLocations is list);
+    }
+
+    match /userSettings/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidUserSettings(request.resource.data);
+      allow update: if isOwner(uid) && isValidUserSettings(request.resource.data);
+      allow delete: if isOwner(uid);
+    }
+  }
+}

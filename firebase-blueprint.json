@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "userSettings": {
+      "title": "User Settings",
+      "description": "User preferences for weather display and saved locations",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User ID" },
+        "unit": { "type": "string", "enum": ["metric", "imperial"], "description": "Temperature unit" },
+        "savedLocations": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "List of saved city names"
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "unit"]
+    }
+  },
+  "firestore": {
+    "/userSettings/{uid}": {
+      "schema": "userSettings",
+      "description": "Individual user settings document"
+    }
+  }
+}

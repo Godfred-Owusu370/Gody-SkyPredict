@@ -1,0 +1,5 @@
+{
+  "name": "GODY SkyPredict",
+  "description": "A modern, AI-powered weather prediction app with real-time data, rain probability analysis, and immersive animations.",
+  "requestFramePermissions": ["geolocation", "microphone"]
+}
