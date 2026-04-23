@@ -50,3 +50,11 @@ export interface PredictionResult {
   probability: number;
   message: string;
 }
+
+export interface GeocodeResult {
+  name: string;
+  lat: number;
+  lon: number;
+  country: string;
+  state?: string;
+}

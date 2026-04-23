@@ -54,6 +54,27 @@ async function startServer() {
     }
   });
 
+  // API Route for Geocoding (City Search Suggestions)
+  app.get("/api/geosearch", async (req, res) => {
+    const { q } = req.query;
+    const apiKey = process.env.OPENWEATHER_API_KEY;
+
+    if (!q || !apiKey || apiKey === "MY_OPENWEATHER_API_KEY") {
+      return res.status(400).json({ error: "Missing parameters" });
+    }
+
+    try {
+      const url = `https://api.openweathermap.org/geo/1.0/direct?q=${q}&limit=5&appid=${apiKey}`;
+      const response = await axios.get(url);
+      res.json(response.data);
+    } catch (error: any) {
+      console.error("Geocoding API Error:", error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({ 
+        error: error.response?.data?.message || "Failed to search cities" 
+      });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

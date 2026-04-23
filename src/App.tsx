@@ -12,12 +12,13 @@ import {
   Moon,
   CloudRain,
   Navigation,
+  Globe,
   X,
   AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
-import { WeatherData, PredictionResult } from './types';
+import { WeatherData, PredictionResult, GeocodeResult } from './types';
 import { predictRain } from './lib/prediction';
 import { RainAnimation, SunAnimation, CloudAnimation } from './components/WeatherAnimations';
 import { 
@@ -33,8 +34,6 @@ import { format } from 'date-fns';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { LoginPage } from './components/LoginPage';
-import { GHANA_CITIES } from './lib/cities';
 
 export default function App() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
@@ -48,9 +47,9 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [isListening, setIsListening] = useState(false);
-  const [showDetailedForecast, setShowDetailedForecast] = useState(false);
+  const [isDetailedModalOpen, setIsDetailedModalOpen] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const glassClass = theme === 'dark' ? 'glass-dark' : 'glass-light';
@@ -61,7 +60,6 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
-      setIsAuthReady(true);
       if (u) {
         // Load settings from Firebase
         try {
@@ -82,8 +80,11 @@ export default function App() {
         } catch (e) {
           console.error("Failed to load user settings", e);
         }
-        fetchWeatherByCoords();
       }
+      
+      // Always fetch weather, even for guest users
+      fetchWeatherByCoords();
+      setIsAuthReady(true);
     });
 
     // Load history from localStorage
@@ -166,9 +167,7 @@ export default function App() {
     try {
       const params: any = { units };
       if (searchCity) {
-        // Prioritize Ghana if no country code is provided
-        const cityToSearch = searchCity.includes(',') ? searchCity : `${searchCity},GH`;
-        params.city = cityToSearch;
+        params.city = searchCity;
       } else if (lat && lon) {
         params.lat = lat;
         params.lon = lon;
@@ -184,7 +183,7 @@ export default function App() {
         addToHistory(response.data.current.name);
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || "Failed to fetch weather data. Make sure the API key is set in .env");
+      setError(err.response?.data?.error || "Failed to fetch weather data. Check your API key.");
     } finally {
       setLoading(false);
     }
@@ -194,10 +193,10 @@ export default function App() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => fetchWeather(undefined, pos.coords.latitude, pos.coords.longitude),
-        () => fetchWeather('Accra') // Fallback
+        () => fetchWeather('London') // Global fallback
       );
     } else {
-      fetchWeather('Accra');
+      fetchWeather('London');
     }
   };
 
@@ -264,6 +263,28 @@ export default function App() {
     }
   };
 
+  const searchCities = async (query: string) => {
+    if (!query || query.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      const response = await axios.get(`/api/geosearch?q=${query}`);
+      setSuggestions(response.data);
+    } catch (err) {
+      console.error("Failed to fetch suggestions", err);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (city.length >= 3) {
+        searchCities(city);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [city]);
+
   const speak = (text: string) => {
     const utterance = new SpeechSynthesisUtterance(text);
     window.speechSynthesis.speak(utterance);
@@ -298,10 +319,6 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return <LoginPage theme={theme} />;
-  }
-
   return (
     <div className={`min-h-screen transition-colors duration-1000 bg-gradient-to-br ${getBgGradient()} p-4 sm:p-6 md:p-8 flex flex-col items-center overflow-x-hidden ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
       {/* Animations */}
@@ -325,7 +342,15 @@ export default function App() {
             <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-slate-900'} tracking-tight`}>GODY SkyPredict</h1>
           </motion.div>
 
-          <div className="relative w-full md:w-[450px] z-30">
+          <div className="relative w-full md:w-[450px] z-30 flex flex-col items-center">
+            <motion.div 
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 mb-3 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/10"
+            >
+              <Globe className="w-3 h-3 text-blue-400" />
+              <span className="text-[9px] font-bold text-blue-400 uppercase tracking-[0.15em]">Global Coverage Active</span>
+            </motion.div>
             <motion.form 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -339,16 +364,6 @@ export default function App() {
                   const value = e.target.value;
                   setCity(value);
                   if (value.length > 0) {
-                    const filtered = GHANA_CITIES.filter(c => 
-                      c.toLowerCase().includes(value.toLowerCase())
-                    ).sort((a, b) => {
-                      const aStarts = a.toLowerCase().startsWith(value.toLowerCase());
-                      const bStarts = b.toLowerCase().startsWith(value.toLowerCase());
-                      if (aStarts && !bStarts) return -1;
-                      if (!aStarts && bStarts) return 1;
-                      return a.localeCompare(b);
-                    }).slice(0, 6);
-                    setSuggestions(filtered);
                     setShowSuggestions(true);
                     setShowHistory(false);
                   } else {
@@ -367,7 +382,7 @@ export default function App() {
                     setShowHistory(false);
                   }, 200);
                 }}
-                placeholder="Search city in Ghana..."
+                placeholder="Search any city or town..."
                 className={`w-full ${theme === 'dark' ? 'glass-dark' : 'glass-light'} py-4 px-14 rounded-3xl ${theme === 'dark' ? 'text-white placeholder-white/50' : 'text-slate-900 placeholder-slate-500'} focus:outline-none focus:ring-2 ring-white/30 transition-all shadow-lg text-lg`}
               />
               <Search className={`absolute left-5 top-1/2 -translate-y-1/2 ${theme === 'dark' ? 'text-white/50' : 'text-slate-500'} w-5 h-5`} />
@@ -383,22 +398,27 @@ export default function App() {
                   className={`absolute top-full left-0 right-0 mt-2 ${theme === 'dark' ? 'glass-dark' : 'glass-light'} rounded-[2rem] overflow-hidden shadow-2xl border border-white/10 z-50`}
                 >
                   <div className={`p-4 border-b ${theme === 'dark' ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50/50'}`}>
-                    <span className={`text-xs font-bold ${theme === 'dark' ? 'text-white/40' : 'text-slate-500'} uppercase tracking-widest`}>Ghana Cities</span>
+                    <span className={`text-xs font-bold ${theme === 'dark' ? 'text-white/40' : 'text-slate-500'} uppercase tracking-widest`}>Global Search</span>
                   </div>
                   <div className="py-2">
                     {suggestions.map((item, index) => (
                       <button
-                        key={index}
+                        key={`${item.name}-${index}`}
                         onClick={() => {
-                          setCity(item);
-                          fetchWeather(item);
+                          const fullName = `${item.name}${item.state ? `, ${item.state}` : ''}, ${item.country}`;
+                          setCity(fullName);
+                          fetchWeather(fullName, item.lat, item.lon);
                           setShowSuggestions(false);
                         }}
                         className={`w-full px-6 py-3 text-left ${theme === 'dark' ? 'text-white/80 hover:bg-white/10 hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'} flex items-center gap-3 transition-all group`}
                       >
                         <MapPin className={`w-4 h-4 ${theme === 'dark' ? 'text-white/20' : 'text-slate-300'} group-hover:text-blue-400 transition-colors`} />
-                        <span className="font-medium">{item}</span>
-                        <span className={`ml-auto text-[10px] font-bold ${theme === 'dark' ? 'text-white/20' : 'text-slate-300'} uppercase tracking-widest`}>GH</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{item.name}</span>
+                          <span className={`text-[10px] ${subTextClass} uppercase`}>
+                            {item.state ? `${item.state}, ` : ''}{item.country}
+                          </span>
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -454,17 +474,19 @@ export default function App() {
             >
               {theme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-700" />}
             </button>
-            <div className={`flex items-center gap-3 ${theme === 'dark' ? 'glass-dark' : 'glass-light'} p-1.5 pr-5 rounded-full shadow-md group relative`}>
-              <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || user.email}&background=random`} alt="" className="w-9 h-9 rounded-full border border-white/20" />
-              <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>{user.displayName?.split(' ')[0] || user.email?.split('@')[0]}</span>
-              
-              <button 
-                onClick={logout}
-                className="absolute top-full right-0 mt-2 bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg"
-              >
-                Logout
-              </button>
-            </div>
+            {user && (
+              <div className={`flex items-center gap-3 ${theme === 'dark' ? 'glass-dark' : 'glass-light'} p-1.5 pr-5 rounded-full shadow-md group relative`}>
+                <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || user.email}&background=random`} alt="" className="w-9 h-9 rounded-full border border-white/20" />
+                <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>{user.displayName?.split(' ')[0] || user.email?.split('@')[0]}</span>
+                
+                <button 
+                  onClick={logout}
+                  className="absolute top-full right-0 mt-2 bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
           </motion.div>
         </header>
 
@@ -500,11 +522,11 @@ export default function App() {
             className="flex flex-col items-center justify-center py-20 text-center z-20"
           >
             <div className={`w-32 h-32 ${glassClass} rounded-full flex items-center justify-center mb-8 shadow-2xl`}>
-              <Sun className={`w-16 h-16 ${theme === 'dark' ? 'text-white/80' : 'text-amber-500'} animate-pulse`} />
+              <Globe className={`w-16 h-16 ${theme === 'dark' ? 'text-white/80' : 'text-blue-500'} animate-pulse`} />
             </div>
-            <h2 className={`text-4xl md:text-5xl font-bold ${textClass} mb-4`}>Welcome to GODY SkyPredict</h2>
+            <h2 className={`text-4xl md:text-5xl font-bold ${textClass} mb-4 tracking-tight`}>World-Class Weather Insights</h2>
             <p className={`${subTextClass} text-lg max-w-md`}>
-              Enter a city name or use your current location to get AI-powered weather predictions.
+              Access real-time meteorological data and AI-powered sky predictions for any city on Earth.
             </p>
             <button 
               onClick={fetchWeatherByCoords}
@@ -683,7 +705,7 @@ export default function App() {
                     </div>
                   </div>
                   <button 
-                    onClick={() => setShowDetailedForecast(true)}
+                    onClick={() => setIsDetailedModalOpen(true)}
                     className={`${glassClass} px-6 py-2.5 rounded-2xl ${textClass} text-xs font-bold uppercase tracking-widest hover:bg-white/20 transition-all shadow-md`}
                   >
                     View Detailed Forecast
@@ -691,7 +713,7 @@ export default function App() {
                 </div>
               </div>
               
-              <div className="h-72 w-full cursor-pointer" onClick={() => setShowDetailedForecast(true)}>
+              <div className="h-72 w-full cursor-pointer" onClick={() => setIsDetailedModalOpen(true)}>
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={forecastData}>
                     <defs>
@@ -766,20 +788,26 @@ export default function App() {
         )}
       </div>
 
-      <footer className={`mt-auto py-10 ${theme === 'dark' ? 'text-white/30' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.3em] z-20 flex flex-col items-center gap-2`}>
-        <span>© 2026 GODY SkyPredict • Powered by </span>
-        <span className="opacity-50">G-TECHNOLOGIES</span>
+      <footer className={`mt-auto py-10 ${theme === 'dark' ? 'text-white/30' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.3em] z-20 flex flex-col items-center gap-4`}>
+        <div className="flex items-center gap-6">
+          <span>Global Weather Intelligence</span>
+          <div className="w-1 h-1 rounded-full bg-current opacity-20" />
+          <span>Universal Coverage</span>
+        </div>
+        <div className="flex flex-col items-center gap-2 opacity-50">
+          <span>© 2026 GODY SkyPredict • Powered by G-TECHNOLOGIES</span>
+        </div>
       </footer>
 
       {/* Detailed Forecast Modal */}
       <AnimatePresence>
-        {showDetailedForecast && weather && (
+        {isDetailedModalOpen && weather && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowDetailedForecast(false)}
+              onClick={() => setIsDetailedModalOpen(false)}
               className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
             />
             <motion.div
@@ -794,10 +822,10 @@ export default function App() {
                   <p className={`${subTextClass} font-medium`}>{weather.current.name}, {weather.current.sys.country}</p>
                 </div>
                 <button 
-                  onClick={() => setShowDetailedForecast(false)}
+                  onClick={() => setIsDetailedModalOpen(false)}
                   className={`p-4 ${glassClass} rounded-2xl hover:bg-white/20 transition-all`}
                 >
-                  <Search className={`w-6 h-6 ${textClass} rotate-45`} />
+                  <X className={`w-6 h-6 ${textClass}`} />
                 </button>
               </div>
 
